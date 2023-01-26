@@ -1027,7 +1027,7 @@ function is_recovery_deadline_past(recovery_date) {
 	const date = new Date(recovery_date);
 	date.setHours(0,0,0,0);
 	date.setDate(date.getDate() - 1);
-	const now = new Date("2023-01-31");
+	const now = new Date();
 	return (now > date)
 }
 
