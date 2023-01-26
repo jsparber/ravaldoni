@@ -1,5 +1,6 @@
 const http = require("http");
 const fs = require('fs');
+const config = require('config');
 const url_parser = require('url');
 const drive = require("./drive");
 const querystring = require('querystring');
@@ -12,33 +13,7 @@ const port = 8000;
 
 const exclusive_operation = new Mutex();
 
-const association_list = [
-	{
-		id: "piazza_grande",
-		name: "Piazza Grande",
-		password: "",
-	},
-	{
-		id: "csapsa",
-		name: "Csapsa s.c.r.l.",
-		password: "",
-	},
-	{
-		id: "altra_babele",
-		name: "L’Altra Babele",
-		password: "",
-	},
-	{
-		id: "chiusi_fuori",
-		name: "Chiusi Fuori",
-		password: "",
-	},
-	{
-		id: "efesta",
-		name: "Efesta APS",
-		password: "",
-	}
-];
+const association_list = config.get("association_list");
 
 function valid_redirection(path) {
 	switch (path) {
