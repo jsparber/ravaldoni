@@ -511,7 +511,7 @@ async function create_add_recovery_date_submitted_page(recovery_date, drive_url)
 		html.push(
 			"<div>",
 			`<h3>Bici: ${bike.id} </h3>`,
-			`<img src="/bike?bike_id=${bike.file_id}&size=800" alt="${bike.file_name}">`,
+			`<img referrerPolicy="no-referrer" src="/bike?bike_id=${bike.file_id}&size=800" alt="${bike.file_name}">`,
 			"</div>",
 			"<hr>",
 		)
