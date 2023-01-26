@@ -8,9 +8,6 @@ const crypto = require('crypto');
 const moment = require('moment');
 const Mutex = require('async-mutex').Mutex;
 
-const host = 'localhost';
-const port = 8000;
-
 const exclusive_operation = new Mutex();
 
 const association_list = config.get("association_list");
@@ -291,8 +288,8 @@ const requestListener = async function (req, res) {
 }
 
 const server = http.createServer(requestListener);
-server.listen(port, host, () => {
-	console.log(`Server is running on http://${host}:${port}`);
+server.listen(config.get("port"), config.get("host"), () => {
+	console.log(`Server is running on http://${config.get("host")}:${config.get("port")}`);
 });
 
 function create_error_page(status_code, error) {
@@ -440,6 +437,9 @@ async function create_add_recovery_date_page() {
 	var probably_next_date = `${String(d.getFullYear()).padStart(4, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
 	html.push(
+		'La cartella delle foto deve essere condiviso con <b>ciclofficina@efesta.net</b>',
+		'<br>',
+		'<br>',
 		'<form action="/add-recovery-date-submitted" method="get">',
 		'<div>',
 		'<label>Data del ritiro: ',
@@ -502,11 +502,20 @@ async function create_add_recovery_date_submitted_page(recovery_date, drive_url)
 		`<a href="/select-bike-preference?recovery_date=${recovery_date}" style="margin-right: 10px;">`,
 		'<button type="button">Invia preference per questo ritiro</button>',
 		'</a>',
-		'<a href="/logoff">',
-		'<button type="button">Disconnetti</button>',
-		'</a>',
 		"</div>",
+		"<br>",
+		"Questo ritiro contine le segenti bici",
 	);
+
+	for (const bike of bikes) {
+		html.push(
+			"<div>",
+			`<h3>Bici: ${bike.id} </h3>`,
+			`<img src="/bike?bike_id=${bike.file_id}&size=800" alt="${bike.file_name}">`,
+			"</div>",
+			"<hr>",
+		)
+	}
 
 	html.push(
 		"</center>",
