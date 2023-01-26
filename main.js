@@ -75,7 +75,7 @@ const requestListener = async function (req, res) {
 
 					let valid_ass = undefined;
 					for (const ass of association_list) {
-						if (ass.id === input["association"] && ass.password === input["password"]) {
+						if (ass.id === input["association"] && ass.password === crypto.createHash('sha256').update(input["password"]).digest('base64')) {
 							valid_ass = ass.id;
 						}
 					}
