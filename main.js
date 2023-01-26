@@ -1,12 +1,16 @@
 const http = require("http");
+const fs = require('fs');
 const url_parser = require('url');
 const drive = require("./drive");
 const querystring = require('querystring');
 const crypto = require('crypto');
+const moment = require('moment');
+const Mutex = require('async-mutex').Mutex;
 
 const host = 'localhost';
 const port = 8000;
 
+const exclusive_operation = new Mutex();
 
 const association_list = [
 	{
@@ -39,6 +43,8 @@ const association_list = [
 function valid_redirection(path) {
 	switch (path) {
 		case "/":
+		case "/add-recovery-date":
+		case "/add-recovery-date-submitted":
 		case "/select-recovery-date":
 		case "/select-bike-preference":
 		case "/bike-preference-submitted":
@@ -80,6 +86,7 @@ function get_association(request) {
 
 
 const requestListener = async function (req, res) {
+	try {
 	let url = url_parser.parse(req.url, true);
 
 	const association = get_association(req);
@@ -113,13 +120,13 @@ const requestListener = async function (req, res) {
 						res.end('ok');
 					} else {
 						res.setHeader("Content-Type", "text/html; charset=utf-8");
-						res.writeHead(200);
+						res.statusCode = 200;
 						res.end(await create_login_page("La password inserita non e' valida. Assicurati che hai scelto l' associazione giusta e hai inserito la password corretta"));
 					}
 				} else {
 					var redirect_url = url.query["redirect"];
 					res.setHeader("Content-Type", "text/html; charset=utf-8");
-					res.writeHead(200);
+					res.statusCode = 200;
 					if (redirect_url) {
 						res.end(await create_login_page("E' necessario effeturare il login per proseguire"));
 					} else {
@@ -151,7 +158,7 @@ const requestListener = async function (req, res) {
 				} else {
 					res.setHeader("Content-Type", "text/html; charset=utf-8");
 					res.writeHead(404);
-					res.end(await create_error_page());
+					res.end(create_error_page(404));
 				}
 		}
 	} else {
@@ -175,18 +182,36 @@ const requestListener = async function (req, res) {
 				break
 			case "/add-recovery-date":
 				res.setHeader("Content-Type", "text/html; charset=utf-8");
-				res.writeHead(200);
+				res.statusCode = 200;
 				res.end(await create_add_recovery_date_page());
+				break
+			case "/add-recovery-date-submitted":
+				var recovery_date = url.query.recovery_date;
+				var drive_url = url.query.recovery_images_url;
+
+				if (!is_valid_recovery_date(recovery_date)) {
+					invalid_request_data(res);
+					return;
+				}
+
+				res.setHeader("Content-Type", "text/html; charset=utf-8");
+				res.statusCode = 200;
+				res.end(await create_add_recovery_date_submitted_page(recovery_date, drive_url));
 				break
 			case "/select-recovery-date":
 				res.setHeader("Content-Type", "text/html; charset=utf-8");
-				res.writeHead(200);
+				res.statusCode = 200;
 				res.end(await create_select_recovery_date_page());
 				break
 			case "/select-bike-preference":
 				var recovery_date = url.query.recovery_date;
 
-				if (is_past_recovery(recovery_date)) {
+				if (!is_valid_recovery_date(recovery_date)) {
+					invalid_request_data(res);
+					return;
+				}
+
+				if (is_recovery_deadline_past(recovery_date)) {
 					res.writeHead(303, {
 						'Location': `/assigned-bikes?recovery_date=${recovery_date}`,
 					});
@@ -194,22 +219,27 @@ const requestListener = async function (req, res) {
 					return;
 				}
 
-				// TODO: show error if we don't have a valid recovery_date
 				res.setHeader("Content-Type", "text/html; charset=utf-8");
-				res.writeHead(200);
-				res.end(await create_select_bike_preference_page(recovery_date));
+				res.statusCode = 200;
+				res.end(await create_select_bike_preference_page(association, recovery_date));
 				break
 			case "/bike-preference-submitted":
 				var recovery_date = url.query.recovery_date;
-				// TODO: show error if we don't have a valid recovery_date
+				if (!is_valid_recovery_date(recovery_date)) {
+					invalid_request_data(res);
+					return;
+				}
+
+				if (is_recovery_deadline_past(recovery_date)) {
+					invalid_request_data(res);
+					return;
+				}
 
 				var data = url.query["data"];
 				if (data) {
 					data = Buffer.from(data, 'base64').toString('ascii');
 				} else if (req.method === 'GET') {
-					res.setHeader("Content-Type", "text/html; charset=utf-8");
-					res.writeHead(404);
-					res.end(await create_error_page("Selezione di bici non valida"));
+					invalid_request_data(res);
 					return;
 				}
 
@@ -219,16 +249,15 @@ const requestListener = async function (req, res) {
 					const input = querystring.parse(body);
 					let preferences = {};
 					for (const bike in input) {
+						if (bike === "number_of_needed_bikes") {
+						}
 						const parsed_value = parseInt(input[bike]);
-						if (!isNaN(parsed_value) && parsed_value >= 0 && parsed_value <= 3) {
+						if (!isNaN(parsed_value) && ((parsed_value >= 0 && parsed_value <= 3) || bike === "number_of_needed_bikes")) {
 							preferences[bike] = parsed_value;
 						} else {
-							console.log("Not a valid preference for this bike");
+							console.log("Not a valid preference for this bike: " + bike);
 
-							// TODO: this should be a critical error maybe throw something
-							res.setHeader("Content-Type", "text/html; charset=utf-8");
-							res.writeHead(404);
-							res.end(await create_error_page("Selezione di bici non valida"));
+							invalid_request_data(res);
 							return;
 						}
 					}
@@ -237,25 +266,33 @@ const requestListener = async function (req, res) {
 					await drive.store_bike_preference(association, recovery_date, preferences);
 
 					res.setHeader("Content-Type", "text/html; charset=utf-8");
-					res.writeHead(200);
+					res.statusCode = 200;
 					res.end(create_bike_preference_submitted_page(recovery_date));
 				} else {
-					res.setHeader("Content-Type", "text/html; charset=utf-8");
-					res.writeHead(404);
-					res.end(await create_error_page());
+					invalid_request_data(res);
+					return;
 				}
 				break
 			case "/assigned-bikes":
 				var recovery_date = url.query.recovery_date;
-				// TODO: show error if we don't have a valid recovery_date
+				if (!is_valid_recovery_date(recovery_date)) {
+					invalid_request_data(res);
+					return;
+				}
+
+				if (!is_recovery_deadline_past(recovery_date)) {
+					invalid_request_data(res);
+					return;
+				}
+
 				res.setHeader("Content-Type", "text/html; charset=utf-8");
-				res.writeHead(200);
+				res.statusCode = 200;
 				res.end(await create_assigned_bikes_page(recovery_date, association));
 				break
 			case "/bike":
 				const bike_id = url.query.bike_id;
 				const size = url.query.size;
-				// TODO: offer the images directly without redirect, because loading the thumbnail may fail
+				// TODO: offer the images directly without redirect, because loading the thumbnail may fail, looks like it works now
 				let image_url = await drive.load_bike_image(bike_id, size);
 				res.writeHead(307, {
 					'Location': image_url,
@@ -264,34 +301,67 @@ const requestListener = async function (req, res) {
 				break;
 			default:
 				res.setHeader("Content-Type", "text/html; charset=utf-8");
-				res.writeHead(404);
-				res.end(await create_error_page());
+				res.statusCode = 404;
+				res.end(create_error_page(404));
 		}
 	}
+	} catch(error) {
+		console.log(error);
+		res.setHeader("Content-Type", "text/html; charset=utf-8");
+		res.writeHead(500);
+
+		let context = {url: req.url, headers: req.headers};
+		res.end(create_error_page(500, JSON.stringify(context,  null, 2) + "\n\n" + error.stack));
+	}
 }
-/*
-	  const proxy = http.get(bike_url)
-	  proxy.once('response', proxyResponse => {
-		      proxyResponse.pipe(response);
-	  });
-	  request.pipe(proxy);
-	  */
-
-
 
 const server = http.createServer(requestListener);
 server.listen(port, host, () => {
 	console.log(`Server is running on http://${host}:${port}`);
 });
 
-function create_error_page(error) {
+function create_error_page(status_code, error) {
 	var html = [];
 	html.push(
 		"<!DOCTYPE html>",
 		"<body>",
-		"<center>",
-		"<h2>Pagina non trovato</h2>",
-		"<h4>Hai raggiunto una pagina che non esiste</h4>",
+		"<center>"
+	);
+
+	switch (status_code) {
+		case 400:
+			html.push(
+				"<h2>Richiesta non valida</h2>",
+				"<h4>La richesta inviata non e' consentito oppure non e' valida</h4>",
+			)
+			break;
+		case 404:
+			html.push(
+				"<h2>Pagina non trovato</h2>",
+				"<h4>Hai raggiunto una pagina che non esiste</h4>",
+			)
+			break;
+		default:
+			html.push(
+				"<h2>Errore interno del server</h2>",
+				"<h4>Il server ha trovato un problema ed non e' riuscito effeturare l' operazione richiesta</h4>",
+				`Scrivi un email all' administratore <a href='mailto:julian@efesta.net'>Julian</a> con il seguente message di errore`
+			)
+			break;
+	}
+
+	if (error != undefined) {
+		html.push(
+			"<br>",
+			"<br>",
+			'<div style="display: inline-block;text-align: left;">',
+			`<pre><code>${error}</code></pre>`,
+			"</div>",
+			"<br>",
+		);
+	}
+
+	html.push(
 		"</br>",
 		"Puoi tornare alla pagina pricinpale oppure disconnetterti e ripropvare di effetuare il login",
 	);
@@ -376,7 +446,7 @@ async function create_add_recovery_date_page() {
 
 	html.push(
 		"<div>",
-		'<a href="/add-recovery-date" style="margin-right: 10px;">',
+		'<a href="/" style="margin-right: 10px;">',
 		'<button type="button">Torna alla pagina principale</button>',
 		'</a>',
 		'<a href="/logoff">',
@@ -389,13 +459,13 @@ async function create_add_recovery_date_page() {
 		"<h2>Aggiungi let foto e la data per il nuovo ritiro</h2>",
 	);
 
+	// Automaticaly select the next Wednesday since it should always be a Wednesday
 	var d = new Date()
-	d.setDate(d.getDate() + (((1 + 7 - d.getDay()) % 7) || 7));
+	d.setDate(d.getDate() + (((3 + 7 - d.getDay()) % 7) || 7));
 	var probably_next_date = `${String(d.getFullYear()).padStart(4, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-	console.log(probably_next_date);
 	html.push(
-		'<form action="" method="get">',
+		'<form action="/add-recovery-date-submitted" method="get">',
 		'<div>',
 		'<label>Data del ritiro: ',
 		`<input type="date" name="recovery_date" value="${probably_next_date}" required />`,
@@ -403,7 +473,7 @@ async function create_add_recovery_date_page() {
 		'</div>',
 		'<div>',
 		'<label>Link della cartella delle foto: ',
-		'<input type="url" name="recovery_images" value="" required />',
+		'<input type="url" name="recovery_images_url" value="" required />',
 		'</label>',
 		'</div>',
 		'<br>',
@@ -411,6 +481,56 @@ async function create_add_recovery_date_page() {
 		'<input type="submit" value="Aggiungi data" />',
 		'</div>',
 		'</form>',
+	);
+
+	html.push(
+		"</center>",
+		"</body>",
+		"</html>"
+	);
+	return html.join("");
+}
+
+async function create_add_recovery_date_submitted_page(recovery_date, drive_url) {
+	var html = [];
+	html.push(
+		"<!DOCTYPE html>",
+		"<body>",
+		"<center>",
+	);
+
+	html.push(
+		"<div>",
+		'<a href="/" style="margin-right: 10px;">',
+		'<button type="button">Torna alla pagina principale</button>',
+		'</a>',
+		'<a href="/logoff">',
+		'<button type="button">Disconnetti</button>',
+		'</a>',
+		"</div>",
+	);
+
+	await drive.add_recovery_metadata(recovery_date, drive_url);
+	// TODO: Check if we find anything for it
+	let bikes = await drive.find_bikes(recovery_date);
+
+	html.push(
+		`<h2>Nuovo ritiro aggiunto per il ${recovery_date}</h2>`,
+		"<h3>Grazie per avere aggiunto la data e le foto di un nuovo ritiro</h3>",
+	);
+
+	html.push(
+		"<div>",
+		'<a href="/select-recovery-date" style="margin-right: 10px;">',
+		'<button type="button">Torna alla selezione della data di ritiro</button>',
+		'</a>',
+		`<a href="/select-bike-preference?recovery_date=${recovery_date}" style="margin-right: 10px;">`,
+		'<button type="button">Invia preference per questo ritiro</button>',
+		'</a>',
+		'<a href="/logoff">',
+		'<button type="button">Disconnetti</button>',
+		'</a>',
+		"</div>",
 	);
 
 	html.push(
@@ -448,20 +568,42 @@ async function create_select_recovery_date_page() {
 
 	html.push(
 		"<h3>Prossimo ritiro</h3>",
-		'<form action="/select-bike-preference" method="get">',
-		'<input type="submit" name="recovery_date" value="2022-12-05" />',
-		'</form>',
 	);
 
-	html.push(
-		"<h3>Ritiri passati</h3>",
-	);
+	const dates = (await drive.find_recovery_dates()).map(date => {return date.date;});
+	console.log(dates);
+	let past_dates = [];
 
-	html.push(
-		'<form action="/assigned-bikes" method="get">',
-		'<input type="submit" name="recovery_date" value="2022-12-05" />',
-		'</form>',
-	);
+	for (const date of dates) {
+		if (is_past_recovery(date)) {
+			past_dates.push(date);
+			continue;
+		}
+
+		html.push(
+			'<div style="margin-bottom: 10px;">',
+			`<a href="/select-bike-preference?recovery_date=${date}" style="margin-right: 10px;">`,
+			`<button type="button">${date}</button>`,
+			'</a>',
+			"</div>",
+		);
+	}
+
+	if (past_dates.length > 0 ) {
+		html.push(
+			"<h3>Ritiri passati</h3>",
+		);
+
+		for (const date of past_dates) {
+			html.push(
+				'<div style="margin-bottom: 10px;">',
+				`<a href="/assigned-bikes?recovery_date=${date}" style="margin-right: 10px;">`,
+				`<button type="button">${date}</button>`,
+				'</a>',
+				"</div>",
+			);
+		}
+	}
 
 	html.push(
 		"</center>",
@@ -472,15 +614,48 @@ async function create_select_recovery_date_page() {
 }
 
 
-async function create_select_bike_preference_page(recovery_date) {
+async function create_select_bike_preference_page(association, recovery_date) {
+	let was_already_submitted = await drive.bike_preference_submitted(association, recovery_date);
+
+	if (was_already_submitted) {
+		return create_already_submitted_page(recovery_date);
+	}
+
 	var html = [];
 	html.push(
 		"<!DOCTYPE html>",
 		"<body>",
-		"<center>",
 	);
 
+	html.push(`<script>
+	function update_preference_count(self) {
+		// The order is not interessted, little interessted, interessted, interssted a lot 
+		let selection_count = [0, 0, 0, 0];
+
+		for (let input of self) {
+			if (input.type != "radio" || !input.checked) {
+				continue;
+			}
+			selection_count[input.value]++;
+		}
+		let selected_bikes_message = document.getElementById("selected_bikes_message"); 
+		let total_bikes = selection_count[0] + selection_count[1] + selection_count[2] + selection_count[3];
+		let total_selected_bikes = selection_count[1] + selection_count[2] + selection_count[3];
+
+		selected_bikes_message.innerHTML = "Hai scelto in totale " + total_selected_bikes + 
+		" bici di <b>" + total_bikes + "</b>, di cui ti interssano molto <b>" + selection_count[3] + 
+		"</b>, ti interssano <b>" + selection_count[2] + 
+		"</b> e ti intersssano poco <b>" + selection_count[1] + "</b>";
+
+		const number_of_needed_bikes = document.getElementById("number_of_needed_bikes");
+		number_of_needed_bikes.value = selection_count[3];
+	}
+	</script>`);
+
+
+
 	html.push(
+		"<center>",
 		"<div>",
 		'<a href="/select-recovery-date" style="margin-right: 10px;">',
 		'<button type="button">Torna alla selezione della data di ritiro</button>',
@@ -492,7 +667,14 @@ async function create_select_bike_preference_page(recovery_date) {
 	);
 
 	html.push(
-		`<h2>Scelgi le bici che la tua assocazione vorebbe ritirare il ${recovery_date}</h2>`,
+		`<h2>Invia preference per il ritirare del ${recovery_date}</h2>`,
+		"Sotto puoi esprimere la tua preference delle bici che vorresti ritirare.",
+		"<br>",
+		"In piu' puoi indicare il nummero massimo di bici che vorresti ottenere.",
+		"<br>",
+		'E\' consigliato di indicare <b>Mi interessa molto</b> per alemeno il nummero di bici che vorresti,',
+		"<br>",
+		'perche\' una bici viene assegnato prima all\' associazione che ha espresso il maggiore interesse.',
 		`<form action="/bike-preference-submitted?recovery_date=${recovery_date}" method="post">`,
 	);
 
@@ -504,19 +686,19 @@ async function create_select_bike_preference_page(recovery_date) {
 			`<h3>Bici: ${bike.id} </h3>`,
 			`<img src="/bike?bike_id=${bike.file_id}&size=800" alt="${bike.file_name}">`,
 			'<div>',
-			`<input type="radio" id="selection_3_${bike.id}" name="${bike.id}" value="3">`,
+			`<input type="radio" id="selection_3_${bike.id}" name="${bike.id}" oninput="update_preference_count(this.form)" value="3">`,
 			`<label for="selection_3_${bike.id}">Mi interessa molto</label>`,
 			'</div>',
 			'<div>',
-			`<input type="radio" id="selection_2_${bike.id}" name="${bike.id}" value="2">`,
+			`<input type="radio" id="selection_2_${bike.id}" name="${bike.id}" oninput="update_preference_count(this.form)" value="2">`,
 			`<label for="selection_2_${bike.id}">Mi interessa</label>`,
 			'</div>',
 			'<div>',
-			`<input type="radio" id="selection_1_${bike.id}" name="${bike.id}" value="1">`,
+			`<input type="radio" id="selection_1_${bike.id}" name="${bike.id}" oninput="update_preference_count(this.form)" value="1">`,
 			`<label for="selection_1_${bike.id}">Mi interessa poco</label>`,
 			'</div>',
 			'<div>',
-			`<input type="radio" id="selection_0_${bike.id}" name="${bike.id}" value="0" checked="checked">`,
+			`<input type="radio" id="selection_0_${bike.id}" name="${bike.id}" oninput="update_preference_count(this.form)" value="0" checked="checked">`,
 			`<label for="selection_0_${bike.id}">Non mi interessa</label>`,
 			'</div>',
 			"</div>",
@@ -525,7 +707,17 @@ async function create_select_bike_preference_page(recovery_date) {
 	}
 
 	html.push(
-		// TODO: show number of selected bikes
+		'<br>',
+		'<div id="selected_bikes_message">',
+		"Hai scelto nessuna bici che ti interessa.",
+		'</div>',
+		'<br>',
+		'<div>',
+		`<label for="number_of_needed_bikes">Il nummero di bici che vorresti:</label>`,
+		'<br>',
+		`<input type="number" id="number_of_needed_bikes" name="number_of_needed_bikes" max=${bikes.length} min=0></input>`,
+		'</div>',
+		'<br>',
 		'<input type="submit" value="Invia scelte" />',
 		'</form>',
 		"</center>",
@@ -562,13 +754,46 @@ function create_bike_preference_submitted_page(recovery_date) {
 	return html.join("");
 }
 
-// TODO: Show message that the deadline wasn't reached yet before deadline
-// TODO: Allow to delete selection before deadline
-async function create_assigned_bikes_page(recovery_date, association) {
-	// TODO: do this only once
-	await calculate_assigned_bikes(recovery_date);
+function create_already_submitted_page(recovery_date) {
+	var html = [];
+	html.push(
+		"<!DOCTYPE html>",
+		"<body>",
+		"<center>",
+	);
 
+	html.push(
+		`<h2>Hai gia invitato la tua preferenza per il ritiro ${recovery_date}</h2>`,
+		"<h3>La lista delle bici da ritirare sara disponibile da mezza notte del giorno precedente al ritirito</h3>",
+	);
+
+	html.push(
+		"<div>",
+		'<a href="/select-recovery-date" style="margin-right: 10px;">',
+		'<button type="button">Torna alla selezione della data di ritiro</button>',
+		'</a>',
+		'<a href="/logoff">',
+		'<button type="button">Disconnetti</button>',
+		'</a>',
+		"</div>",
+	);
+
+	return html.join("");
+}
+
+async function create_assigned_bikes_page(recovery_date, association) {
 	let bikes = await drive.load_assigned_bikes(recovery_date);
+
+	if (bikes === undefined) {
+		const release = await exclusive_operation.acquire();
+		try {
+			await calculate_assigned_bikes(recovery_date);
+		} finally { 
+			release();
+		}
+		bikes = await drive.load_assigned_bikes(recovery_date);
+	} 
+
 	let my_bikes = bikes.filter(bike => bike.association === association);
 	let unassigned_bikes = bikes.filter(bike => bike.association === undefined);
 
@@ -608,19 +833,21 @@ async function create_assigned_bikes_page(recovery_date, association) {
 		)
 	}
 
-	html.push(
-		"<h2>Bici non assegnate</h2>",
-		"<h4>Queste bici non sono state scelte da nessuna associazione</h4>",
-	)
-
-	for (const bike of unassigned_bikes) {
+	if (unassigned_bikes.length > 0) {
 		html.push(
-			"<div>",
-			`<h3>Bici: ${bike.id}</h3>`,
-			`<img src="/bike?bike_id=${bike.file_id}&size=800" alt="${bike.file_name}">`,
-			"</div>",
-			"<hr>",
+			"<h2>Bici non assegnate</h2>",
+			"<h4>Queste bici non sono state scelte da nessuna associazione</h4>",
 		)
+
+		for (const bike of unassigned_bikes) {
+			html.push(
+				"<div>",
+				`<h3>Bici: ${bike.id}</h3>`,
+				`<img src="/bike?bike_id=${bike.file_id}&size=800" alt="${bike.file_name}">`,
+				"</div>",
+				"<hr>",
+			)
+		}
 	}
 
 	html.push(
@@ -648,25 +875,39 @@ async function calculate_assigned_bikes(recovery_date) {
 	let points = await drive.load_association_points();
 	let no_selected_bikes = {};
 	let preference_list = {};
-	let bikes = await drive.find_bikes();
+	let bikes = await drive.find_bikes(recovery_date);
 	let assigned_bikes = [];
 	for (const association of association_list) {
 		preference_list[association.id] = await drive.load_bike_preference(association.id, recovery_date);
 		if (points[association.id] === undefined) {
 			points[association.id] = 0;
 		}
-		no_selected_bikes[association.id] = 0;
-		for (const bike in preference_list[association.id]) {
-			if (preference_list[association.id][bike] !== 0) {
-				no_selected_bikes[association.id] += 1; 
-			}
+	}
+
+	console.log("Load assigment bikes");
+	console.log("Start list of bikes:");
+	console.log(bikes);
+	console.log("Start points:")
+	console.log(points);
+
+	let number_assigned_bikes = [];
+	for (const association of association_list) {
+		number_assigned_bikes[association.id] = 0;
+		if (preference_list[association.id] === undefined) {
+			continue;
+		}
+		console.log(preference_list[association.id]);
+		if (preference_list[association.id].number_of_needed_bikes === undefined) {
+			preference_list[association.id].number_of_needed_bikes = bikes.length;
 		}
 	}
 
 	for (const priority of [3, 2, 1]) {
-		// We need to shuffle the list of bikes to randomize how the bikes are selected
-		for (var bike of shuffle(bikes)) {
-			let interested = [];
+		// Find assosations intressted in a specific bike assining bikes without conflicts directly
+		let interested = {};
+		for (var bike of bikes) {
+			let interest_for_bike = [];
+			// Skip over already assigned bikes
 			if (bike.association !== undefined) {
 				continue;
 			}
@@ -678,18 +919,46 @@ async function calculate_assigned_bikes(recovery_date) {
 					continue;
 				}
 				if (preference_list[association.id][bike.id] == priority) {
-					interested.push(association.id);
+					interest_for_bike.push(association.id);
 				}
 			}
-			if (interested.length === 0) {
+
+			// Ignore bikes nobody is interessted in
+			if (interest_for_bike.length === 0) {
+				// If there is only one association interessted assign it direclty
+			} else if (interest_for_bike.length === 1) {
+				const ass = interest_for_bike[0];
+				if (number_assigned_bikes[ass] < preference_list[ass].number_of_needed_bikes) {
+					bike["association"] = ass;
+					number_assigned_bikes[ass]++;
+				}
+			} else {
+				interested[bike.id] = interest_for_bike; 
+			}
+		}
+
+		// Resolve conflicts 
+		for (var bike of shuffle(bikes)) {
+			// Skip over already assigned bikes
+			if (bike.association !== undefined) {
 				continue;
 			}
 
-			console.log("Number of conflicting: " + interested.length + " bike: " + bike.id + " " + interested);
+			// Skip over bikes nobody is interessted in at this priority level
+			if (interested[bike.id] === undefined) {
+				continue;
+			}
 
-			let ass_with_max_points = interested[0];
-			for (const ass of interested) {
-				if (ass === ass_with_max_points) {
+			let ass_with_max_points;
+
+			for (const ass of interested[bike.id]) {
+				// Once a assosation has recived enough bikes don't assign any bikes any more
+				if (number_assigned_bikes[ass] >= preference_list[ass].number_of_needed_bikes) {
+					continue;
+				}
+
+				if (ass_with_max_points === undefined) {
+					ass_with_max_points = ass;
 				} else if (points[ass] === points[ass_with_max_points]) {
 					// Select at random which association should recive the bike
 					if (Math.floor(Math.random() * 2) === 0) {
@@ -699,23 +968,28 @@ async function calculate_assigned_bikes(recovery_date) {
 					ass_with_max_points = ass;
 				}
 			}
-			bike["association"] = ass_with_max_points;
-			// FIXME: should this be -1/NUMBER_OF_ASSINGED_BIKES or -1/NUMBER_OF_SELECTED_BIKES?
-			// Add multiply by priority to remove more points when a bike with higher priority was assigned
-			points[ass_with_max_points] -= 1 * priority / no_selected_bikes[ass_with_max_points];
 
-			for (const ass of interested) {
-				if (ass_with_max_points == ass) {
-					continue;
+			// Only change points if there where conflicts
+			if (interested[bike.id].filter(ass => number_assigned_bikes[ass] < preference_list[ass].number_of_needed_bikes).length > 1) {
+				for (const ass of interested[bike.id]) {
+					if (ass_with_max_points == ass) {
+						points[ass] -= priority
+					} else {
+						points[ass] += priority / interested[bike.id].length
+					}
 				}
-				points[ass_with_max_points] += 1 * priority / no_selected_bikes[ass_with_max_points];
 			}
+
+			bike["association"] = ass_with_max_points;
+			number_assigned_bikes[bike["association"]]++;
+
 		}
 	}
 	console.log("Store assigment bikes");
-	console.log(no_selected_bikes);
-	console.log(points);
+	console.log("Final list of assinged bikes:");
 	console.log(bikes);
+	console.log("Final points:")
+	console.log(points);
 	await drive.store_assigned_bikes(bikes, recovery_date);
 	await drive.store_association_points(points);
 }
@@ -740,35 +1014,57 @@ async function get_post_data(req) {
 	return await p;
 }
 
-
+function is_valid_recovery_date(recovery_date) {
+	return moment(recovery_date, "YYYY-MM-DD", true).isValid();
+}
 
 function is_past_recovery(recovery_date) {
 	const today = new Date();
 	return ((new Date(recovery_date)) < today)
 }
+
+function is_recovery_deadline_past(recovery_date) {
+	const date = new Date(recovery_date);
+	date.setHours(0,0,0,0);
+	date.setDate(date.getDate() - 1);
+	const now = new Date("2023-01-31");
+	return (now > date)
+}
+
+function invalid_request_data(res) {
+	res.setHeader("Content-Type", "text/html; charset=utf-8");
+	res.writeHead(400);
+	res.end(create_error_page(400));
+}
+
 /* TODOS:
 - [x] Autentication, identification for different assosciations
 - [x] Allow to login
-- [ ] Find folder for "tornate", maybe allow to add a new recovery via pasting link
-- [ ] Show nummber of selected bikes per preference at the end of bike selection
-- [ ] List selected bikes on confirmation page and number of selected bikes per preference
+- [x] Find folder for "tornate", maybe allow to add a new recovery via pasting link
 - [x] Load photos from google drive
 - [x] Display images and allow setting preferences via html page
 - [x] Store preferences
 - [x] Load preferences
-- [?] Calculate assigned bikes and calculate remaining points
+- [x] Calculate assigned bikes and calculate remaining points
 - [x] Show assigned bikes via html page
 - [x] Cache folder and file ids, they don't change
 - [x] show assigned bikes with information when they will show up
 - [x] Store and load points from file 
 - [x] Store and load assigned bikes
 - [x] show request errors
-- [ ] show internal errors
+- [x] show internal errors
+- [x] validated GET DATA, mostly recovery date
 - [x] Make sure that the preference selection isn't lost when the token expires and still send and stored
+- [x] Show nummber of selected bikes per preference at the end of bike selection
 
 Nice to have
+- [ ] Allow to delete selection before deadline
 - [ ] Maintain selection between page loads and logins
 - [ ] Invalidate tokens after some time
 - [ ] Remove token from token_store after some time
+- [ ] Don't show internel server error when the requested recovery date doesn't exsit
+- [ ] List selected bikes on confirmation page and number of selected bikes per preference
+- [ ] Show bikes selected by other assosations on assigned bike page, or/and all bikes 
+
 */
 

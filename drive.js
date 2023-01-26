@@ -1,8 +1,10 @@
 const fs = require('fs').promises;
+const url_parser = require('url');
 const path = require('path');
 const process = require('process');
 const {authenticate} = require('@google-cloud/local-auth');
 const {google} = require('googleapis');
+const moment = require('moment');
 
 // If modifying these scopes, delete token.json.
 const SCOPES = ['https://www.googleapis.com/auth/drive'];
@@ -67,18 +69,71 @@ async function authorize() {
         return client;
 }
 
-/* Returns a list of images
- * TODO: Find folder for recovery_date
- */
+// TODO: check if the url/folder id is valid
+async function add_recovery_metadata(recovery_date, images_folder_url) { 
+	const drive = await get_drive();
+	const file_name = `metadata-${recovery_date}.json`;
+	const recovery_date_folder = await find_or_create_recovery_date_folder(recovery_date);
+
+	const old_file_id = await find_file(file_name, false, recovery_date_folder);
+
+	if (old_file_id != undefined) {
+		console.log("metadata already added for recovery_date " + recovery_date);
+		return false;
+	}
+
+	const fileMetadata = {
+		name: file_name,
+		parents: [recovery_date_folder],
+	};
+
+	const images_folder_id = path.basename(url_parser.parse(images_folder_url, false).pathname);
+	const media = {
+		mimeType: 'application/json',
+		body: JSON.stringify({'images_folder_id': images_folder_id}),
+	};
+	const file = await drive.files.create({
+		resource: fileMetadata,
+		media: media,
+		fields: 'id',
+	});
+
+	console.log('File Id of stored metadata:', file.data.id);
+	return true;
+}
+
+async function get_recovery_metadata(recovery_date) { 
+	const drive = await get_drive();
+	const file_name = `metadata-${recovery_date}.json`;
+	// It's fine to create the main folder since it will be used sooner or later
+	const main_folder = await find_or_create_main_folder();
+	// We don't want to create the recovery folder if it doesn't exsits yet
+	const recovery_date_folder_id = await find_file(recovery_date, true, main_folder);
+	const file_id = await find_file(file_name, false, recovery_date_folder_id);
+
+	if (file_id === undefined) {
+		console.log("No metadate was stored for recovery date " + recovery_date);
+		return;
+	}
+
+	const file = await drive.files.get({
+		fileId: file_id,
+		alt: 'media',
+	});
+	return file.data;
+}
+
+
 async function find_bikes(recovery_date) {
 	const drive = await get_drive();
+	const metadata = await get_recovery_metadata(recovery_date);
         let next_page_token = "";
         let files = [];
         do {
                 const res = await drive.files.list({
                         pageToken: `${next_page_token}`,
                         fields: 'nextPageToken, files(id, name)',
-                        q: `'1dcOtZEbt4C05F7EjhqT4aEGRZqJUiNGm' in parents`
+                        q: `'${metadata.images_folder_id}' in parents and trashed=false`
                 });
                 next_page_token = res.data.nextPageToken;
                 files = files.concat(res.data.files);
@@ -91,7 +146,7 @@ async function find_bikes(recovery_date) {
         return files.map(bike => ({
 		"file_id": bike.id,
 		"file_name": bike.name,
-		// TODO: we can't really trust that files and with `.jpg`
+		// TODO: we can't really trust that files end with `.jpg`
 		"id": bike.name.split(".jpg")[0],
 	}));
 }
@@ -207,6 +262,16 @@ async function find_or_create_recovery_date_folder(recovery_date) {
 	return file.data.id
 }
 
+async function bike_preference_submitted(association, recovery_date) { 
+	const drive = await get_drive();
+	const file_name = `${association}-${recovery_date}.json`;
+	const recovery_date_folder = await find_or_create_recovery_date_folder(recovery_date);
+
+	const old_file_id = await find_file(file_name, false, recovery_date_folder);
+
+	return old_file_id != undefined
+}
+
 async function store_bike_preference(association, recovery_date, preferences) { 
 	const drive = await get_drive();
 	const file_name = `${association}-${recovery_date}.json`;
@@ -311,7 +376,6 @@ async function load_assigned_bikes(recovery_date) {
 	return file.data;
 }
 
-
 async function store_association_points(points) { 
 	const drive = await get_drive();
 	const file_name = `points.json`;
@@ -378,6 +442,32 @@ async function load_association_points() {
 	return file.data;
 }
 
+async function find_recovery_dates() {
+	const drive = await get_drive();
+	const main_folder = await find_or_create_main_folder();
+        let next_page_token = "";
+        let files = [];
+        do {
+                const res = await drive.files.list({
+                        pageToken: `${next_page_token}`,
+                        fields: 'nextPageToken, files(id, name)',
+                        q: `'${main_folder}' in parents and trashed=false`
+                });
+                next_page_token = res.data.nextPageToken;
+                files = files.concat(res.data.files);
+        } while (next_page_token != undefined)
+
+        if (files.length === 0) {
+                console.log('No files found.');
+        }
+
+        return files.filter(date => {
+		return moment(date.name, "YYYY-MM-DD", true).isValid();
+	}).map(date => ({
+		"folder_id": date.id,
+		"date": date.name,
+	}));
+}
 
 async function get_drive() {
 	if (drive === undefined) {
@@ -395,4 +485,4 @@ async function get_request() {
 }
 
 
-module.exports = { load_bike_image, find_bikes, store_bike_preference, load_bike_preference, store_assigned_bikes, load_assigned_bikes, store_association_points, load_association_points};
+module.exports = { add_recovery_metadata, get_recovery_metadata, load_bike_image, find_bikes, store_bike_preference, load_bike_preference, store_assigned_bikes, load_assigned_bikes, store_association_points, load_association_points, find_recovery_dates, bike_preference_submitted};
