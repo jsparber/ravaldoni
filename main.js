@@ -437,7 +437,7 @@ async function create_add_recovery_date_page() {
 	);
 
 	html.push(
-		"<h2>Aggiungi let foto e la data per il nuovo ritiro</h2>",
+		"<h2>Aggiungi le foto e la data per il nuovo ritiro</h2>",
 	);
 
 	// Automaticaly select the next Wednesday since it should always be a Wednesday
