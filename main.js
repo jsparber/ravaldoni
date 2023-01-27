@@ -863,7 +863,7 @@ async function create_assigned_bikes_page(recovery_date, association) {
 			html.push(
 				"<div>",
 				`<h3>Bici: ${bike.id}</h3>`,
-				`<img src="/bike?bike_id=${bike.file_id}&size=800" alt="${bike.file_name}">`,
+				`<img style="max-width: 100%;" src="/bike?bike_id=${bike.file_id}&size=800" alt="${bike.file_name}">`,
 				"</div>",
 				"<hr>",
 			)
