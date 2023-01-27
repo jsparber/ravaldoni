@@ -264,7 +264,6 @@ const requestListener = async function (req, res) {
 			case "/bike":
 				const bike_id = url.query.bike_id;
 				const size = url.query.size;
-				// TODO: offer the images directly without redirect, because loading the thumbnail may fail, looks like it works now
 				let image_url = await drive.load_bike_image(bike_id, size);
 				res.writeHead(307, {
 					'Location': image_url,
@@ -530,7 +529,7 @@ async function create_add_recovery_date_submitted_page(recovery_date, drive_url)
 			html.push(
 				"<div>",
 				`<h3>Bici: ${bike.id} </h3>`,
-				`<img style="max-width: 100%;" src="/bike?bike_id=${bike.file_id}&size=800" alt="${bike.file_name}">`,
+				`<img style="max-width: 100%;" src="${bike.thumbnailLink}=s800" alt="${bike.file_name}">`,
 				"</div>",
 				"<hr>",
 			)
@@ -694,7 +693,7 @@ async function create_select_bike_preference_page(association, recovery_date) {
 		html.push(
 			"<div>",
 			`<h3>Bici: ${bike.id} </h3>`,
-			`<img style="max-width: 100%;" src="/bike?bike_id=${bike.file_id}&size=800" alt="${bike.file_name}">`,
+			`<img style="max-width: 100%;" src="${bike.thumbnailLink}=s800" alt="${bike.file_name}">`,
 			'<div>',
 			`<input type="radio" id="selection_3_${bike.id}" name="${bike.id}" oninput="update_preference_count(this.form)" value="3">`,
 			`<label for="selection_3_${bike.id}">Mi interessa molto</label>`,
@@ -855,7 +854,7 @@ async function create_assigned_bikes_page(recovery_date, association) {
 		html.push(
 			"<div>",
 			`<h3>Bici: ${bike.id}</h3>`,
-			`<img style="max-width: 100%;" src="/bike?bike_id=${bike.file_id}&size=800" alt="${bike.file_name}">`,
+			`<img style="max-width: 100%;" src="${bike.thumbnailLink}=s800" alt="${bike.file_name}">`,
 			"</div>",
 			"<hr>",
 		)
@@ -871,7 +870,7 @@ async function create_assigned_bikes_page(recovery_date, association) {
 			html.push(
 				"<div>",
 				`<h3>Bici: ${bike.id}</h3>`,
-				`<img style="max-width: 100%;" src="/bike?bike_id=${bike.file_id}&size=800" alt="${bike.file_name}">`,
+				`<img style="max-width: 100%;" src="${bike.thumbnailLink}=s800" alt="${bike.file_name}">`,
 				"</div>",
 				"<hr>",
 			)

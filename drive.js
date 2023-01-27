@@ -132,7 +132,7 @@ async function find_bikes(recovery_date) {
         do {
                 const res = await drive.files.list({
                         pageToken: `${next_page_token}`,
-                        fields: 'nextPageToken, files(id, name)',
+                        fields: 'nextPageToken, files(id, name, thumbnailLink)',
                         q: `'${metadata.images_folder_id}' in parents and trashed=false`
                 });
                 next_page_token = res.data.nextPageToken;
@@ -148,6 +148,7 @@ async function find_bikes(recovery_date) {
 		"file_name": bike.name,
 		// TODO: we can't really trust that files end with `.jpg`
 		"id": bike.name.split(".jpg")[0],
+		"thumbnailLink" : bike.thumbnailLink.split("=")[0]
 	}));
 }
 
