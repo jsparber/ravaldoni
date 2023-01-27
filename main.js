@@ -497,36 +497,44 @@ async function create_add_recovery_date_submitted_page(recovery_date, drive_url)
 		"</div>",
 	);
 
-	await drive.add_recovery_metadata(recovery_date, drive_url);
-	// TODO: Check if we find anything for it
-	let bikes = await drive.find_bikes(recovery_date);
+	const result = await drive.add_recovery_metadata(recovery_date, drive_url);
+	if (!result) {
+		html.push(
+			`<h2>Esiste gia un ritro per il ${recovery_date}</h2>`,
+			"<h3>Non e' possible aggiungere due ritiri nello stesso girono.</h3>",
+		);
+	} else {
 
-	html.push(
-		`<h2>Nuovo ritiro aggiunto per il ${recovery_date}</h2>`,
-		"<h3>Grazie per avere aggiunto la data e le foto di un nuovo ritiro</h3>",
-	);
+		// TODO: Check if we find anything for it
+		let bikes = await drive.find_bikes(recovery_date);
 
-	html.push(
-		"<div>",
-		'<a href="/select-recovery-date" style="margin-right: 10px;">',
-		'<button type="button">Torna alla selezione della data di ritiro</button>',
-		'</a>',
-		`<a href="/select-bike-preference?recovery_date=${recovery_date}" style="margin-right: 10px;">`,
-		'<button type="button">Invia preference per questo ritiro</button>',
-		'</a>',
-		"</div>",
-		"<br>",
-		"Questo ritiro contine le segenti bici",
-	);
+		html.push(
+			`<h2>Nuovo ritiro aggiunto per il ${recovery_date}</h2>`,
+			"<h3>Grazie per avere aggiunto la data e le foto di un nuovo ritiro</h3>",
+		);
 
-	for (const bike of bikes) {
 		html.push(
 			"<div>",
-			`<h3>Bici: ${bike.id} </h3>`,
-			`<img style="max-width: 100%;" src="/bike?bike_id=${bike.file_id}&size=800" alt="${bike.file_name}">`,
+			'<a href="/select-recovery-date" style="margin-right: 10px;">',
+			'<button type="button">Torna alla selezione della data di ritiro</button>',
+			'</a>',
+			`<a href="/select-bike-preference?recovery_date=${recovery_date}" style="margin-right: 10px;">`,
+			'<button type="button">Invia preference per questo ritiro</button>',
+			'</a>',
 			"</div>",
-			"<hr>",
-		)
+			"<br>",
+			"Questo ritiro contine le segenti bici",
+		);
+
+		for (const bike of bikes) {
+			html.push(
+				"<div>",
+				`<h3>Bici: ${bike.id} </h3>`,
+				`<img style="max-width: 100%;" src="/bike?bike_id=${bike.file_id}&size=800" alt="${bike.file_name}">`,
+				"</div>",
+				"<hr>",
+			)
+		}
 	}
 
 	html.push(
