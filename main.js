@@ -826,13 +826,22 @@ async function create_assigned_bikes_page(recovery_date, association) {
 		"</div>",
 	);
 
-	html.push(
-		`<h2>Pottrai ritira le seguente bici il ${recovery_date}</h2>`,
-		"<h4>In fondo trovate tutte le bici non assegnate</h4>",
-		"<div>",
-		`A tua associazione sono state assegnato ${my_bikes.length} bici delle  ${bikes.length} bici di questo ritiro. Invece ${unassigned_bikes.length} bici non sono state assegnato a una assocazione.`,
-		"</div>",
-	);
+	if (my_bikes.length === 0) {
+		html.push(
+			`<h2>Non hai inviato nessuna preferenza per il ritiro del ${recovery_date}</h2>`,
+			`<h4>Le segenti <b>${unassigned_bikes.length}</b> bici non sono state assegnate a nessuna associazione</h4>`,
+		)
+	} else {
+		html.push(
+			`<h2>Pottrai ritira le seguente bici il ${recovery_date}</h2>`,
+			"<h4>In fondo trovate tutte le bici non assegnate</h4>",
+			"<div>",
+			`A tua associazione sono state assegnato ${my_bikes.length} bici delle ${bikes.length} bici di questo ritiro.`,
+			'</br>',
+			`Invece ${unassigned_bikes.length} bici non sono state assegnato a nessuna associazione.`,
+			"</div>",
+		);
+	}
 
 	for (const bike of my_bikes) {
 		html.push(
