@@ -995,7 +995,7 @@ async function calculate_assigned_bikes(recovery_date) {
 					if (ass_with_max_points == ass) {
 						points[ass] -= priority
 					} else {
-						points[ass] += priority / interested[bike.id].length
+						points[ass] += priority / (interested[bike.id].length - 1)
 					}
 				}
 			}
