@@ -296,6 +296,9 @@ function create_error_page(status_code, error) {
 	var html = [];
 	html.push(
 		"<!DOCTYPE html>",
+		"<head>",
+		'<meta name="viewport" content="width=device-width, initial-scale=1">',
+		"</head>",
 		"<body>",
 		"<center>"
 	);
@@ -362,6 +365,9 @@ function create_login_page(error) {
 	var html = [];
 	html.push(
 		"<!DOCTYPE html>",
+		"<head>",
+		'<meta name="viewport" content="width=device-width, initial-scale=1">',
+		"</head>",
 		"<body>",
 		"<center>",
 		"<h2>Piattaforma per il patto di collaborazione per il recupero bici</h2>",
@@ -412,6 +418,9 @@ async function create_add_recovery_date_page() {
 	var html = [];
 	html.push(
 		"<!DOCTYPE html>",
+		"<head>",
+		'<meta name="viewport" content="width=device-width, initial-scale=1">',
+		"</head>",
 		"<body>",
 		"<center>",
 	);
@@ -470,6 +479,9 @@ async function create_add_recovery_date_submitted_page(recovery_date, drive_url)
 	var html = [];
 	html.push(
 		"<!DOCTYPE html>",
+		"<head>",
+		'<meta name="viewport" content="width=device-width, initial-scale=1">',
+		"</head>",
 		"<body>",
 		"<center>",
 	);
@@ -511,7 +523,7 @@ async function create_add_recovery_date_submitted_page(recovery_date, drive_url)
 		html.push(
 			"<div>",
 			`<h3>Bici: ${bike.id} </h3>`,
-			`<img referrerPolicy="no-referrer" src="/bike?bike_id=${bike.file_id}&size=800" alt="${bike.file_name}">`,
+			`<img referrerPolicy="no-referrer" style="max-width: 100%;" src="/bike?bike_id=${bike.file_id}&size=800" alt="${bike.file_name}">`,
 			"</div>",
 			"<hr>",
 		)
@@ -530,6 +542,9 @@ async function create_select_recovery_date_page() {
 	var html = [];
 	html.push(
 		"<!DOCTYPE html>",
+		"<head>",
+		'<meta name="viewport" content="width=device-width, initial-scale=1">',
+		"</head>",
 		"<body>",
 		"<center>",
 	);
@@ -608,6 +623,9 @@ async function create_select_bike_preference_page(association, recovery_date) {
 	var html = [];
 	html.push(
 		"<!DOCTYPE html>",
+		"<head>",
+		'<meta name="viewport" content="width=device-width, initial-scale=1">',
+		"</head>",
 		"<body>",
 	);
 
@@ -668,7 +686,7 @@ async function create_select_bike_preference_page(association, recovery_date) {
 		html.push(
 			"<div>",
 			`<h3>Bici: ${bike.id} </h3>`,
-			`<img src="/bike?bike_id=${bike.file_id}&size=800" alt="${bike.file_name}">`,
+			`<img style="max-width: 100%;" src="/bike?bike_id=${bike.file_id}&size=800" alt="${bike.file_name}">`,
 			'<div>',
 			`<input type="radio" id="selection_3_${bike.id}" name="${bike.id}" oninput="update_preference_count(this.form)" value="3">`,
 			`<label for="selection_3_${bike.id}">Mi interessa molto</label>`,
@@ -715,6 +733,9 @@ function create_bike_preference_submitted_page(recovery_date) {
 	var html = [];
 	html.push(
 		"<!DOCTYPE html>",
+		"<head>",
+		'<meta name="viewport" content="width=device-width, initial-scale=1">',
+		"</head>",
 		"<body>",
 		"<center>",
 	);
@@ -742,6 +763,9 @@ function create_already_submitted_page(recovery_date) {
 	var html = [];
 	html.push(
 		"<!DOCTYPE html>",
+		"<head>",
+		'<meta name="viewport" content="width=device-width, initial-scale=1">',
+		"</head>",
 		"<body>",
 		"<center>",
 	);
@@ -784,6 +808,9 @@ async function create_assigned_bikes_page(recovery_date, association) {
 	var html = [];
 	html.push(
 		"<!DOCTYPE html>",
+		"<head>",
+		'<meta name="viewport" content="width=device-width, initial-scale=1">',
+		"</head>",
 		"<body>",
 		"<center>",
 	);
@@ -811,7 +838,7 @@ async function create_assigned_bikes_page(recovery_date, association) {
 		html.push(
 			"<div>",
 			`<h3>Bici: ${bike.id}</h3>`,
-			`<img src="/bike?bike_id=${bike.file_id}&size=800" alt="${bike.file_name}">`,
+			`<img style="max-width: 100%;" src="/bike?bike_id=${bike.file_id}&size=800" alt="${bike.file_name}">`,
 			"</div>",
 			"<hr>",
 		)
