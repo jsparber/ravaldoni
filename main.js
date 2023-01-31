@@ -797,17 +797,28 @@ function create_already_submitted_page(recovery_date) {
 }
 
 async function create_assigned_bikes_page(recovery_date, association) {
-	let bikes = await drive.load_assigned_bikes(recovery_date);
+	let bikes = await drive.find_bikes(recovery_date);
+	let assigned_bikes = await drive.load_assigned_bikes(recovery_date);
 
-	if (bikes === undefined) {
+	if (assigned_bikes === undefined) {
 		const release = await exclusive_operation.acquire();
 		try {
 			await calculate_assigned_bikes(recovery_date);
 		} finally { 
 			release();
 		}
-		bikes = await drive.load_assigned_bikes(recovery_date);
+		assigned_bikes = await drive.load_assigned_bikes(recovery_date);
 	} 
+
+	// We need to use the response form find_bikes() to get up-to-date thumbnail urls
+	let map = {};
+	for (const bike of assigned_bikes) {
+		map[bike.id] = bike.association;
+	}
+
+	for (const bike of bikes) {
+		bike.association = map[bike.id];
+	}
 
 	let my_bikes = bikes.filter(bike => bike.association === association);
 	let unassigned_bikes = bikes.filter(bike => bike.association === undefined);
@@ -833,19 +844,26 @@ async function create_assigned_bikes_page(recovery_date, association) {
 		"</div>",
 	);
 
+	let association_name;
+	for (const ass of association_list) {
+		if (ass.id == association) {
+			association_name = ass.name;
+			break;
+		}
+	}
+
 	if (my_bikes.length === 0) {
 		html.push(
-			`<h2>Non hai inviato nessuna preferenza per il ritiro del ${recovery_date}</h2>`,
-			`<h4>Le segenti <b>${unassigned_bikes.length}</b> bici non sono state assegnate a nessuna associazione</h4>`,
+			`<h2>La tua assocazione ${association_name} non ha inviato nessuna preferenza per il ritiro del ${recovery_date}</h2>`,
+			`Le bici delle altre assocazioni e le <b>${unassigned_bikes.length}</b> bici non assegnate si trovano qui sotto`,
 		)
 	} else {
 		html.push(
 			`<h2>Pottrai ritira le seguente bici il ${recovery_date}</h2>`,
-			"<h4>In fondo trovate tutte le bici non assegnate</h4>",
 			"<div>",
-			`A tua associazione sono state assegnato ${my_bikes.length} bici delle ${bikes.length} bici di questo ritiro.`,
+			`A ${association_name} sono state assegnato ${my_bikes.length} bici delle ${bikes.length} bici di questo ritiro.`,
 			'</br>',
-			`Invece ${unassigned_bikes.length} bici non sono state assegnato a nessuna associazione.`,
+			`Le bici delle altre assocazioni e le <b>${unassigned_bikes.length}</b> bici non assegnate si trovano in fondo alla pagina`,
 			"</div>",
 		);
 	}
@@ -853,11 +871,49 @@ async function create_assigned_bikes_page(recovery_date, association) {
 	for (const bike of my_bikes) {
 		html.push(
 			"<div>",
-			`<h3>Bici: ${bike.id}</h3>`,
+		        `<h3>Assocazione: ${association_name}, Bici: ${bike.id}</h3>`,
 			`<img style="max-width: 100%;" src="${bike.thumbnailLink}=s800" alt="${bike.file_name}">`,
 			"</div>",
 			"<hr>",
 		)
+	}
+
+
+		html.push(
+			"<h2>Bici assegnato ad altre assocazioni</h2>",
+		);
+	for (const ass of association_list) {
+		if (ass.id == association) {
+			continue;
+		}
+		let this_bikes = bikes.filter(bike => bike.association === ass.id);
+
+		if (this_bikes.length === 0) {
+			html.push(
+				`<h4>L' assocazione ${ass.name} non ha inviato nessuna preferenza per il ritiro del ${recovery_date}</h4>`,
+				"<hr>",
+				"<hr>",
+			)
+			continue;
+		}
+
+		html.push(
+			`<h3>Queste bici sono state assegnate a ${ass.name}</h3>`,
+		);
+
+		for (const bike of this_bikes) {
+			html.push(
+				"<div>",
+				`<h3>Assocazione: ${ass.name}, Bici: ${bike.id}</h3>`,
+				`<img style="max-width: 100%;" src="${bike.thumbnailLink}=s800" alt="${bike.file_name}">`,
+				"</div>",
+				"<hr>",
+			)
+		}
+
+		html.push(
+			"<hr>",
+		);
 	}
 
 	if (unassigned_bikes.length > 0) {
