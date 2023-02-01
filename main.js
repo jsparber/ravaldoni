@@ -722,7 +722,7 @@ async function create_select_bike_preference_page(association, recovery_date) {
 		'</div>',
 		'<br>',
 		'<div>',
-		`<label for="number_of_needed_bikes">Il nummero di bici che vorresti:</label>`,
+		`<label for="number_of_needed_bikes">Il nummero massimo di bici che vorresti (questo e' il massimo nummero di bici che ti veranno assegnati):</label>`,
 		'<br>',
 		`<input type="number" id="number_of_needed_bikes" name="number_of_needed_bikes" max=${bikes.length} min=0></input>`,
 		'</div>',
